@@ -1,6 +1,6 @@
 # Terraform Provider Uptimerobot
 
-[![Terrafrom Basic Test Process](https://github.com/exileed/tterraform-provider-uptimerobot/actions/workflows/test.yml/badge.svg)](https://github.com/exileed/tterraform-provider-uptimerobot/actions/workflows/test.yml)
+[![Terrafrom Basic Test Process](https://github.com/exileed/terraform-provider-uptimerobot/actions/workflows/test.yml/badge.svg)](https://github.com/exileed/terraform-provider-uptimerobot/actions/workflows/test.yml)
 
 This repository provides both a Terraform provider for the [UptimeRobot](https://uptimerobot.com).
 

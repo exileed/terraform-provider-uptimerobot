@@ -33,6 +33,24 @@ var monitorHTTPAuthType = map[string]int{
 	"digest": 2,
 }
 
+var monitorHTTPMethodType = map[string]int{
+	"head":    1,
+	"get":     2,
+	"post":    3,
+	"put":     4,
+	"patch":   5,
+	"delete":  6,
+	"options": 7,
+}
+
+var monitorStatusType = map[string]int{
+	"paused":          0,
+	"not_checked_yet": 1,
+	"up":              2,
+	"seems_down":      8,
+	"down":            9,
+}
+
 func resourceMonitor() *schema.Resource {
 	return &schema.Resource{
 		Description: "Uptimerobot monitor resource",
@@ -47,8 +65,9 @@ func resourceMonitor() *schema.Resource {
 
 		Schema: map[string]*schema.Schema{
 			"friendly_name": {
-				Type:     schema.TypeString,
-				Required: true,
+				Type:        schema.TypeString,
+				Required:    true,
+				Description: "The friendly name of the monitor.",
 			},
 			"url": {
 				Type:     schema.TypeString,
@@ -93,6 +112,11 @@ func resourceMonitor() *schema.Resource {
 				Optional:     true,
 				ValidateFunc: validation.StringInSlice(mapKeys(monitorHTTPAuthType), false),
 			},
+			//"http_method": {
+			//	Type:         schema.TypeString,
+			//	Optional:     true,
+			//	ValidateFunc: validation.StringInSlice(mapKeys(monitorHTTPMethodType), false),
+			//},
 			"status": {
 				Type:     schema.TypeString,
 				Computed: true,
@@ -189,11 +213,18 @@ func resourceMonitorCreate(ctx context.Context, d *schema.ResourceData, meta int
 	alertContactStr := strings.Join(acStrings, "-")
 	request.AlertContacts = &alertContactStr
 
-	monitor, err := client.Monitor.NewMonitor(request)
+	var monitor *uptimerobotapi.MonitorsSingResp
+	var err error
+
+	err = retryTime(func() error {
+		monitor, err = client.Monitor.NewMonitor(request)
+		return err
+	}, timeoutMinutes)
 
 	if err != nil {
 		return diag.Errorf(err.Error())
 	}
+
 	d.SetId(strconv.Itoa(monitor.Monitor.Id))
 
 	return nil
@@ -204,13 +235,25 @@ func resourceMonitorRead(ctx context.Context, d *schema.ResourceData, meta inter
 	id := d.Id()
 
 	request := uptimerobotapi.GetMonitorsParams{
-		Monitors: id,
+		Monitors:      &id,
+		AlertContacts: 1,
+		SSL:           1,
 	}
 
-	m, err := client.Monitor.GetMonitors(request)
+	var m *uptimerobotapi.MonitorsResp
+	var err error
+
+	err = retryTime(func() error {
+		m, err = client.Monitor.GetMonitors(request)
+		return err
+	}, timeoutMinutes)
 
 	if err != nil {
 		return diag.Errorf(err.Error())
+	}
+
+	if m.Pagination.Total == 0 {
+		return diag.Errorf("Monitor %d not found", m.Monitors[0].Id)
 	}
 
 	monitor := m.Monitors[0]
@@ -286,23 +329,16 @@ func resourceMonitorUpdate(ctx context.Context, d *schema.ResourceData, meta int
 	alertContactStr := strings.Join(acStrings, "-")
 	request.AlertContacts = &alertContactStr
 
-	monitorEdit, err := client.Monitor.EditMonitor(idInt, request)
+	err = retryTime(func() error {
+		_, err = client.Monitor.EditMonitor(idInt, request)
+		return err
+	}, timeoutMinutes)
 
 	if err != nil {
 		return diag.Errorf(err.Error())
 	}
 
-	intStr := strconv.Itoa(monitorEdit.Monitor.Id)
-
-	requestSingle := uptimerobotapi.GetMonitorsParams{
-		Monitors: intStr,
-	}
-
-	monitor, err := client.Monitor.GetMonitors(requestSingle)
-
-	fillMonitor(d, monitor.Monitors[0])
-
-	return nil
+	return resourceMonitorRead(ctx, d, meta)
 }
 
 func resourceMonitorDelete(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
@@ -316,7 +352,10 @@ func resourceMonitorDelete(ctx context.Context, d *schema.ResourceData, meta int
 		return diag.Errorf(err.Error())
 	}
 
-	_, err = client.Monitor.DeleteMonitor(idInt)
+	err = retryTime(func() error {
+		_, err = client.Monitor.DeleteMonitor(idInt)
+		return err
+	}, timeoutMinutes)
 
 	if err != nil {
 		return diag.Errorf(err.Error())
@@ -337,5 +376,20 @@ func fillMonitor(d *schema.ResourceData, m uptimerobotapi.Monitor) {
 	d.Set("http_password", m.HttpPassword)
 	d.Set("port", m.Port)
 	d.Set("interval", m.Interval)
-	d.Set("status", m.Status)
+	d.Set("timeout", m.Timeout)
+	d.Set("ignore_ssl_errors", m.SSL.IgnoreErrors == 1)
+	d.Set("status", intToString(monitorStatusType, m.Status))
+
+	rawContacts := make([]map[string]interface{}, len(*m.AlertContacts))
+
+	for k, v := range *m.AlertContacts {
+		rawContacts[k] = map[string]interface{}{
+			"id":         v.Id,
+			"recurrence": v.Recurrence,
+			"threshold":  v.Threshold,
+		}
+	}
+	if err := d.Set("alert_contact", rawContacts); err != nil {
+		fmt.Errorf("error setting alert_contact for resource %s: %s", d.Id(), err.Error())
+	}
 }

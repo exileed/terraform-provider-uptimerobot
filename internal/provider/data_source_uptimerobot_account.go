@@ -29,7 +29,13 @@ func dataSourceAccount() *schema.Resource {
 func dataSourceAccountRead(_ context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
 	client := meta.(uptimerobotapi.Client)
 
-	resp, err := client.Account.GetAccountDetails()
+	var resp *uptimerobotapi.AccountResp
+	var err error
+
+	err = retryTime(func() error {
+		resp, err = client.Account.GetAccountDetails()
+		return err
+	}, timeoutMinutes)
 
 	if err != nil {
 		return diag.Errorf(err.Error())

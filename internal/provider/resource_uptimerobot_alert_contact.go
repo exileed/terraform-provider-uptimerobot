@@ -30,6 +30,12 @@ var alertContactType = map[string]int{
 	"discord":    23,
 }
 
+var alertContactStatus = map[string]int{
+	"not_activated": 0,
+	"paused":        1,
+	"active":        2,
+}
+
 func resourceAlertContact() *schema.Resource {
 	return &schema.Resource{
 		Description: "Uptimerobot alert contact resource",
@@ -43,20 +49,24 @@ func resourceAlertContact() *schema.Resource {
 		},
 
 		Schema: map[string]*schema.Schema{
-			"friendly_name": &schema.Schema{
+			"friendly_name": {
 				Type:     schema.TypeString,
 				Required: true,
 			},
-			"type": &schema.Schema{
+			"type": {
 				Type:         schema.TypeString,
 				Required:     true,
 				ForceNew:     true,
 				ValidateFunc: validation.StringInSlice(mapKeys(alertContactType), false),
 			},
-			"value": &schema.Schema{
+			"value": {
 				Type:     schema.TypeString,
 				Required: true,
-				ForceNew: true,
+				ForceNew: false,
+			},
+			"status": {
+				Type:     schema.TypeString,
+				Computed: true,
 			},
 		},
 	}
@@ -73,7 +83,13 @@ func resourceAlertContactCreate(ctx context.Context, d *schema.ResourceData, met
 
 	params := uptimerobotapi.NewAlertContactParams{TypeContact: acTypeStr, Value: acValue, FriendlyName: acName}
 
-	ac, err := client.AlertContact.NewAlertContact(params)
+	var ac *uptimerobotapi.AlertContactSingleResp
+	var err error
+
+	err = retryTime(func() error {
+		ac, err = client.AlertContact.NewAlertContact(params)
+		return err
+	}, timeoutMinutes)
 
 	if err != nil {
 		return diag.Errorf(err.Error())
@@ -106,17 +122,24 @@ func resourceAlertContactRead(ctx context.Context, d *schema.ResourceData, meta 
 		AlertContacts: &id,
 	}
 
-	ac, err := client.AlertContact.GetAlertContacts(getParams)
+	var ac *uptimerobotapi.AlertContactResp
+	var err error
+
+	err = retryTime(func() error {
+		ac, err = client.AlertContact.GetAlertContacts(getParams)
+		return err
+	}, timeoutMinutes)
 
 	if err != nil {
 		return diag.Errorf(err.Error())
 	}
 
 	if ac.Total == 0 {
-		return diag.Errorf("AlertContact %s not found", id)
+		return diag.Errorf("AlertContact %s not found err", id)
 	}
 
 	alertContact := ac.AlertContacts[0]
+
 	fillAlertContact(d, alertContact)
 
 	return nil
@@ -138,13 +161,16 @@ func resourceAlertContactUpdate(ctx context.Context, d *schema.ResourceData, met
 
 	params := uptimerobotapi.EditAlertContactParams{Id: idStr, Value: &acValue, FriendlyName: &acName}
 
-	_, err = client.AlertContact.EditAlertContact(params)
+	err = retryTime(func() error {
+		_, err = client.AlertContact.EditAlertContact(params)
+		return err
+	}, timeoutMinutes)
 
 	if err != nil {
 		return diag.Errorf(err.Error())
 	}
 
-	return nil
+	return resourceMonitorRead(ctx, d, meta)
 }
 
 func resourceAlertContactDelete(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
@@ -158,7 +184,10 @@ func resourceAlertContactDelete(ctx context.Context, d *schema.ResourceData, met
 		return diag.Errorf(err.Error())
 	}
 
-	_, err = client.AlertContact.DeleteAlertContact(idStr)
+	err = retryTime(func() error {
+		_, err = client.AlertContact.DeleteAlertContact(idStr)
+		return err
+	}, timeoutMinutes)
 
 	if err != nil {
 		return diag.Errorf(err.Error())
@@ -171,5 +200,5 @@ func fillAlertContact(d *schema.ResourceData, ac uptimerobotapi.AlertContact) {
 	d.Set("friendly_name", ac.FriendlyName)
 	d.Set("value", ac.Value)
 	d.Set("type", intToString(alertContactType, ac.Type))
-	d.Set("status", ac.Status)
+	d.Set("status", intToString(alertContactStatus, ac.Status))
 }

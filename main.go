@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"flag"
+	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/plugin"
 	"github.com/hashicorp/terraform-provider-uptimerobot/internal/provider"
 	"log"
@@ -33,7 +34,9 @@ func main() {
 	flag.BoolVar(&debugMode, "debug", false, "set to true to run the provider with support for debuggers like delve")
 	flag.Parse()
 
-	opts := &plugin.ServeOpts{ProviderFunc: provider.New(version)}
+	opts := &plugin.ServeOpts{ProviderFunc: func() *schema.Provider {
+		return provider.Provider(version)
+	}}
 
 	if debugMode {
 		err := plugin.Debug(context.Background(), "registry.terraform.io/exileed/terraform-provider-uptimerobot", opts)

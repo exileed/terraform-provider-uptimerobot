@@ -6,9 +6,11 @@ description: |-
   
 ---
 
-# uptimerobot-terraform-provider Provider
+# UptimeRobot Provider
 
-
+The [UptimeRobot](https://uptimerobot.com/) provider is used to interact with the resources supported by UptimeRobot. 
+The provider needs to be configured with the proper credentials before it can be used. 
+Use the navigation to the left to read about the available resources.
 
 ## Example Usage
 
@@ -24,4 +26,9 @@ provider "uptimerobot" {
 
 ### Required
 
-- **api_key** (String)
+- **api_key** (String) UptimeRobot's account api key.
+
+Credentials can also be specified using any of the following environment variables (listed in order of precedence):
+
+- **UPTIMEROBOT_API_KEY**
+
